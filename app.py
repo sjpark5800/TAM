@@ -16,10 +16,11 @@ import torch
 from tools.painter import mask_painter
 import psutil
 import time
-try: 
-    from mmcv.cnn import ConvModule
-except:
-    os.system("mim install mmcv")
+from mmcv.cnn import ConvModule
+
+
+from PIL import Image
+import numpy as np
 
 # download checkpoints
 def download_checkpoint(url, folder, filename):
@@ -268,6 +269,11 @@ def vos_tracking_video(video_state, interactive_state, mask_dropdown):
         video_state["logits"][video_state["select_frame_number"]:] = logits
         video_state["painted_images"][video_state["select_frame_number"]:] = painted_images
 
+
+    # for i,d in enumerate(video_state['masks']):
+    #     img = Image.fromarray(d * 255)
+    #     img.save(os.path.join('./result/mask/{}'.format(video_state["video_name"].split('.')[0]), '{:05d}.npy'.format(i)), format='JPEG')
+
     video_output = generate_video_from_frames(video_state["painted_images"], output_path="./result/track/{}".format(video_state["video_name"]), fps=fps) # import video_input to name the output video
     interactive_state["inference_times"] += 1
     
@@ -288,12 +294,6 @@ def vos_tracking_video(video_state, interactive_state, mask_dropdown):
         # save_mask(video_state["masks"], video_state["video_name"])
     #### shanggao code for mask save
     return video_output, video_state, interactive_state, operation_log
-
-# extracting masks from mask_dropdown
-# def extract_sole_mask(video_state, mask_dropdown):
-#     combined_masks = 
-#     unique_masks = np.unique(combined_masks)
-#     return 0 
 
 # inpaint 
 def inpaint_video(video_state, interactive_state, mask_dropdown):
@@ -336,18 +336,15 @@ def generate_video_from_frames(frames, output_path, fps=30):
         output_path (str): The path to save the generated video.
         fps (int, optional): The frame rate of the output video. Defaults to 30.
     """
-    # height, width, layers = frames[0].shape
-    # fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    # video = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    # print(output_path)
-    # for frame in frames:
-    #     video.write(frame)
-    
-    # video.release()
-    frames = torch.from_numpy(np.asarray(frames))
-    if not os.path.exists(os.path.dirname(output_path)):
-        os.makedirs(os.path.dirname(output_path))
-    torchvision.io.write_video(output_path, frames, fps=fps, video_codec="libx264")
+    video = torch.from_numpy(np.asarray(frames)).to(torch.uint8)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    torchvision.io.write_video(
+        output_path,
+        video,
+        fps=fps,                 # ← **확실히 파이썬 int**
+        video_codec="libx264"
+    )
     return output_path
 
 
@@ -378,8 +375,8 @@ SAM_checkpoint = download_checkpoint(sam_checkpoint_url, folder, sam_checkpoint)
 xmem_checkpoint = download_checkpoint(xmem_checkpoint_url, folder, xmem_checkpoint)
 e2fgvi_checkpoint = download_checkpoint_from_google_drive(e2fgvi_checkpoint_id, folder, e2fgvi_checkpoint)
 args.port = 12212
-args.device = "cuda:3"
-# args.mask_save = True
+args.device = "cuda:0"
+args.mask_save = True
 
 # initialize sam, xmem, e2fgvi models
 model = TrackingAnything(SAM_checkpoint, xmem_checkpoint, e2fgvi_checkpoint,args)
@@ -429,7 +426,8 @@ with gr.Blocks() as iface:
         # for user video input
         with gr.Column():
             with gr.Row(scale=0.4):
-                video_input = gr.Video(autosize=True)
+                video_input = gr.Video()
+                # video_input = gr.Video(autosize=True)
                 with gr.Column():
                     video_info = gr.Textbox(label="Video Info")
                     resize_info = gr.Textbox(value="If you want to use the inpaint function, it is best to git clone the repo and use a machine with more VRAM locally. \
@@ -454,16 +452,19 @@ with gr.Blocks() as iface:
                                 interactive=True,
                                 visible=False)
                             remove_mask_button = gr.Button(value="Remove mask", interactive=True, visible=False) 
-                            clear_button_click = gr.Button(value="Clear clicks", interactive=True, visible=False).style(height=160)
+                            clear_button_click = gr.Button(value="Clear clicks", interactive=True, visible=False)
+                            # clear_button_click = gr.Button(value="Clear clicks", interactive=True, visible=False).style(height=160)
                             Add_mask_button = gr.Button(value="Add mask", interactive=True, visible=False)
-                    template_frame = gr.Image(type="pil",interactive=True, elem_id="template_frame", visible=False).style(height=360)
+                    template_frame = gr.Image(type="pil",interactive=True, elem_id="template_frame", visible=False)
+                    # template_frame = gr.Image(type="pil",interactive=True, elem_id="template_frame", visible=False).style(height=360)
                     image_selection_slider = gr.Slider(minimum=1, maximum=100, step=1, value=1, label="Track start frame", visible=False)
                     track_pause_number_slider = gr.Slider(minimum=1, maximum=100, step=1, value=1, label="Track end frame", visible=False)
             
                 with gr.Column():
                     run_status = gr.HighlightedText(value=[("Text","Error"),("to be","Label 2"),("highlighted","Label 3")], visible=False)
                     mask_dropdown = gr.Dropdown(multiselect=True, value=[], label="Mask selection", info=".", visible=False)
-                    video_output = gr.Video(autosize=True, visible=False).style(height=360)
+                    video_output = gr.Video(visible=False)
+                    # video_output = gr.Video(autosize=True, visible=False).style(height=360)
                     with gr.Row():
                         tracking_video_predict_button = gr.Button(value="Tracking", visible=False)
                         inpaint_video_predict_button = gr.Button(value="Inpainting", visible=False)
@@ -597,6 +598,5 @@ with gr.Blocks() as iface:
         outputs=[video_input],
         # cache_examples=True,
     ) 
-iface.queue(concurrency_count=1)
-iface.launch(debug=True, enable_queue=True, server_port=args.port, server_name="0.0.0.0")
-# iface.launch(debug=True, enable_queue=True)
+iface.queue(default_concurrency_limit=1)
+iface.launch(share=True, debug=True, server_port=args.port, server_name="0.0.0.0")
