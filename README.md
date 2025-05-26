@@ -31,6 +31,11 @@
 
 <!-- ![avengers]() -->
 
+## Evaluation for DAVIS 2016
+```shell
+python sav_evaluator.py --gt_root /workspace/TAM_/DAVIS_2016/Annotations/480p/ --pred_root /workspace/TAM/result
+```
+
 ## :rocket: Updates
 
 - 2023/05/02: We uploaded tutorials in steps :world_map:. Check [HERE](./doc/tutorials.md) for more details.
